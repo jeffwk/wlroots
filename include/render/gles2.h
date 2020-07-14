@@ -22,6 +22,7 @@ struct wlr_gles2_pixel_format {
 };
 
 struct wlr_gles2_tex_shader {
+	// attribute locations
 	GLuint program;
 	GLint proj;
 	GLint invert_y;
@@ -29,6 +30,11 @@ struct wlr_gles2_tex_shader {
 	GLint alpha;
 	GLint pos_attrib;
 	GLint tex_attrib;
+	GLuint color_table;
+	GLint  color_enable;
+
+	// source components
+	const GLchar *head, *util, *main;
 };
 
 struct wlr_gles2_renderer {
@@ -117,5 +123,21 @@ void push_gles2_debug_(struct wlr_gles2_renderer *renderer,
 	const char *file, const char *func);
 #define push_gles2_debug(renderer) push_gles2_debug_(renderer, _WLR_FILENAME, __func__)
 void pop_gles2_debug(struct wlr_gles2_renderer *renderer);
+
+// color engine
+
+void color_engine_setup(void);
+GLuint color_build_lut(struct wlr_color_config *input, struct wlr_color_config *output);
+void color_convert(struct wlr_color_config *ic, struct wlr_color_config *oc, const float input[static 4], float output[static 4]);
+
+#define COLOR_LUT_SIZE 64
+
+/**
+ * Ignore half a texel near every edge because those
+ * areas are not interpolated. See GPU Gems 2, Ch. 24 for details.
+ *
+ * offset = (0.5 / COLOR_LUT_SIZE)
+ */
+#define COLOR_OFFSET "0.007813"
 
 #endif
