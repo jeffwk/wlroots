@@ -47,6 +47,8 @@ static void gles2_begin(struct wlr_renderer *wlr_renderer, uint32_t width,
     renderer->viewport_width = width;
     renderer->viewport_height = height;
 
+    renderer->color = NULL;
+
     // enable transparency
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -90,6 +92,13 @@ static void gles2_scissor(struct wlr_renderer *wlr_renderer,
         glDisable(GL_SCISSOR_TEST);
     }
     pop_gles2_debug(renderer);
+}
+
+static void gles2_color_config(struct wlr_renderer *wlr_renderer, struct wlr_color_config *color) {
+    struct wlr_gles2_renderer *renderer =
+        gles2_get_renderer_in_context(wlr_renderer);
+
+    renderer->color = color;
 }
 
 static bool gles2_render_subtexture_with_matrix(
@@ -516,6 +525,7 @@ static const struct wlr_renderer_impl renderer_impl = {
     .end = gles2_end,
     .clear = gles2_clear,
     .scissor = gles2_scissor,
+    .color_config = gles2_color_config,
     .render_subtexture_with_matrix = gles2_render_subtexture_with_matrix,
     .render_quad_with_matrix = gles2_render_quad_with_matrix,
     .render_ellipse_with_matrix = gles2_render_ellipse_with_matrix,
