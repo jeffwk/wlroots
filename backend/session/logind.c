@@ -13,6 +13,7 @@
 #include <wlr/backend/session/interface.h>
 #include <wlr/config.h>
 #include <wlr/util/log.h>
+#include "backend/session/session.h"
 #include "util/signal.h"
 
 #if WLR_HAS_SYSTEMD
@@ -239,6 +240,34 @@ static bool take_control(struct logind_session *session) {
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
 	return ret >= 0;
+}
+
+static bool set_type(struct logind_session *session) {
+	int ret;
+	sd_bus_message *msg = NULL;
+	sd_bus_error error = SD_BUS_ERROR_NULL;
+
+	ret = sd_bus_call_method(session->bus, "org.freedesktop.login1",
+		session->path, "org.freedesktop.login1.Session", "SetType",
+		&error, &msg, "s", "wayland");
+	if (ret < 0) {
+		wlr_log(WLR_ERROR, "Failed to set logind session type for session: %s",
+			error.message);
+	}
+
+	sd_bus_error_free(&error);
+	sd_bus_message_unref(msg);
+
+	if (ret < 0) {
+		return false;
+	}
+
+	ret = setenv("XDG_SESSION_TYPE", "wayland", 1);
+	if (ret < 0) {
+		wlr_log(WLR_ERROR, "Failed to set XDG_SESSION_TYPE for session");
+		return false;
+	}
+	return true;
 }
 
 static void release_control(struct logind_session *session) {
@@ -750,6 +779,8 @@ static struct wlr_session *logind_session_create(struct wl_display *disp) {
 		return NULL;
 	}
 
+	session_init(&session->base);
+
 	if (!get_display_session(&session->id)) {
 		goto error;
 	}
@@ -819,9 +850,16 @@ static struct wlr_session *logind_session_create(struct wl_display *disp) {
 		}
 	}
 
+	if (!set_type(session)) {
+		// Not fatal
+		wlr_log(WLR_INFO, "Failed to set logind session type to wayland");
+	}
+
 	wlr_log(WLR_INFO, "Successfully loaded logind session");
 
 	session->base.impl = &session_logind;
+	session->base.active = true;
+
 	return &session->base;
 
 error_bus:
