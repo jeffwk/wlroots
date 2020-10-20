@@ -164,6 +164,7 @@ static struct wlr_xwayland_surface *xwayland_surface_create(
 	wl_signal_init(&surface->events.set_decorations);
 	wl_signal_init(&surface->events.set_override_redirect);
 	wl_signal_init(&surface->events.ping_timeout);
+	wl_signal_init(&surface->events.set_geometry);
 
 	xcb_get_geometry_reply_t *geometry_reply =
 		xcb_get_geometry_reply(xwm->xcb_conn, geometry_cookie, NULL);
@@ -467,19 +468,40 @@ static void read_surface_title(struct wlr_xwm *xwm,
 	wlr_signal_emit_safe(&xsurface->events.set_title, xsurface);
 }
 
+static bool has_parent(struct wlr_xwayland_surface *parent,
+		struct wlr_xwayland_surface *child) {
+	while (parent) {
+		if (child == parent) {
+			return true;
+		}
+
+		parent = parent->parent;
+	}
+
+	return false;
+}
+
 static void read_surface_parent(struct wlr_xwm *xwm,
 		struct wlr_xwayland_surface *xsurface,
 		xcb_get_property_reply_t *reply) {
+	struct wlr_xwayland_surface *found_parent = NULL;
 	if (reply->type != XCB_ATOM_WINDOW) {
 		return;
 	}
 
 	xcb_window_t *xid = xcb_get_property_value(reply);
 	if (xid != NULL) {
-		xsurface->parent = lookup_surface(xwm, *xid);
+		found_parent = lookup_surface(xwm, *xid);
+		if (!has_parent(found_parent, xsurface)) {
+			xsurface->parent = found_parent;
+		} else {
+			wlr_log(WLR_INFO, "%p with %p would create a loop", xsurface,
+						found_parent);
+		}
 	} else {
 		xsurface->parent = NULL;
 	}
+
 
 	wl_list_remove(&xsurface->parent_link);
 	if (xsurface->parent != NULL) {
@@ -914,14 +936,24 @@ static void xwm_handle_configure_notify(struct wlr_xwm *xwm,
 		return;
 	}
 
-	xsurface->x = ev->x;
-	xsurface->y = ev->y;
-	xsurface->width = ev->width;
-	xsurface->height = ev->height;
+	bool geometry_changed =
+		(xsurface->x != ev->x || xsurface->y != ev->y ||
+		 xsurface->width != ev->width || xsurface->height != ev->height);
+
+	if (geometry_changed) {
+		xsurface->x = ev->x;
+		xsurface->y = ev->y;
+		xsurface->width = ev->width;
+		xsurface->height = ev->height;
+	}
 
 	if (xsurface->override_redirect != ev->override_redirect) {
 		xsurface->override_redirect = ev->override_redirect;
 		wlr_signal_emit_safe(&xsurface->events.set_override_redirect, xsurface);
+	}
+
+	if (geometry_changed) {
+		wlr_signal_emit_safe(&xsurface->events.set_geometry, NULL);
 	}
 }
 
