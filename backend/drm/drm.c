@@ -373,6 +373,12 @@ static bool drm_crtc_page_flip(struct wlr_drm_connector *conn) {
 	}
 
 	conn->pageflip_pending = true;
+
+	// wlr_output's API guarantees that submitting a buffer will schedule a
+	// frame event. However the DRM backend will also schedule a frame event
+	// when performing a modeset. Set frame_pending to true so that
+	// wlr_output_schedule_frame doesn't trigger a synthetic frame event.
+	conn->output.frame_pending = true;
 	return true;
 }
 
@@ -633,13 +639,15 @@ static bool drm_connector_export_dmabuf(struct wlr_output *output,
 		return false;
 	}
 
-	struct wlr_drm_plane *plane = crtc->primary;
-
-	if (plane->current_fb.type == WLR_DRM_FB_TYPE_NONE) {
+	struct wlr_drm_fb *fb = &crtc->primary->queued_fb;
+	if (fb->type == WLR_DRM_FB_TYPE_NONE) {
+		fb = &crtc->primary->current_fb;
+	}
+	if (fb->type == WLR_DRM_FB_TYPE_NONE) {
 		return false;
 	}
 
-	return export_drm_bo(plane->current_fb.bo, attribs);
+	return export_drm_bo(fb->bo, attribs);
 }
 
 struct wlr_drm_fb *plane_get_next_fb(struct wlr_drm_plane *plane) {
@@ -1523,7 +1531,7 @@ static void page_flip_handler(int fd, unsigned seq,
 	};
 	wlr_output_send_present(&conn->output, &present_event);
 
-	if (drm->session->active) {
+	if (drm->session->active && conn->output.enabled) {
 		wlr_output_send_frame(&conn->output);
 	}
 }
